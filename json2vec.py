@@ -207,12 +207,10 @@ class JSONTreeLSTM(JSONNN):
         if string == "":
             return self._init_c(), self._init_c()
 
-        tensor_input = torch.zeros(len(string)).long()
-        for c in range(len(string)):
-            try:
-                tensor_input[c] = ALL_CHARACTERS.index(string[c])
-            except:
-                continue
+        tensor_input = torch.Tensor(
+                [ALL_CHARACTERS.index(char) for char in string if char in ALL_CHARACTERS]
+        ).long()
+
         encoded_input = self.string_encoder(tensor_input.view(1, -1)).view(-1, 1, self.mem_dim)
         output, hidden = self.string_rnn[canon_path](encoded_input)
         return self._init_c(), hidden[0].mean(dim=1)
