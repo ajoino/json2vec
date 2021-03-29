@@ -1,4 +1,4 @@
-import json
+import ujson as json
 import math
 import numpy as np
 
@@ -14,7 +14,7 @@ ALL_CHARACTERS = string.printable
 N_CHARACTERS = len(ALL_CHARACTERS)
 
 
-class keydefaultdict(defaultdict):
+class KeyDefaultDict(defaultdict):
     def __missing__(self, key):
         if self.default_factory is None:
             raise KeyError(key)
@@ -95,17 +95,17 @@ class JSONTreeLSTM(JSONNN):
                  homogenous_types=False):
         super(JSONTreeLSTM, self).__init__(mem_dim)
 
-        self.iouh = keydefaultdict(self._newiouh)
-        self.fh = keydefaultdict(self._newfh)
-        self.lout = keydefaultdict(self._newlout)
+        self.iouh = KeyDefaultDict(self._newiouh)
+        self.fh = KeyDefaultDict(self._newfh)
+        self.lout = KeyDefaultDict(self._newlout)
 
-        self.lstms = keydefaultdict(self._new_lstm)
+        self.lstms = KeyDefaultDict(self._new_lstm)
 
         self.string_encoder = nn.Embedding(N_CHARACTERS, self.mem_dim)
-        self.string_rnn = keydefaultdict(self._new_string_rnn)
+        self.string_rnn = KeyDefaultDict(self._new_string_rnn)
         # nn.LSTM(self.mem_dim, self.mem_dim, 1)
 
-        self.number_embeddings = keydefaultdict(self._new_number)
+        self.number_embeddings = KeyDefaultDict(self._new_number)
         self.number_stats = defaultdict(lambda: [])
 
         self.tie_primitives = tie_weights_primitives
@@ -256,13 +256,13 @@ class SetJSONNN(JSONNN):
         super(SetJSONNN, self).__init__(mem_dim)
 
         self.mem_dim = mem_dim
-        self.embedder = keydefaultdict(self._new_embedder)
-        self.out = keydefaultdict(self._new_out)
+        self.embedder = KeyDefaultDict(self._new_embedder)
+        self.out = KeyDefaultDict(self._new_out)
 
         self.string_encoder = nn.Embedding(N_CHARACTERS, self.mem_dim)
-        self.string_rnn = keydefaultdict(self._new_string_rnn)
+        self.string_rnn = KeyDefaultDict(self._new_string_rnn)
 
-        self.number_embeddings = keydefaultdict(self._new_number)
+        self.number_embeddings = KeyDefaultDict(self._new_number)
         self.number_stats = defaultdict(lambda: [])
 
         self.tie_primitives = tie_weights_primitives
@@ -393,9 +393,9 @@ class FlatJSONNN(JSONNN):
         super(FlatJSONNN, self).__init__(mem_dim)
 
         self.string_encoder = nn.Embedding(N_CHARACTERS, self.mem_dim)
-        self.string_rnn = keydefaultdict(self._new_string_rnn)
+        self.string_rnn = KeyDefaultDict(self._new_string_rnn)
 
-        self.numberEmbeddings = keydefaultdict(self._new_number)
+        self.numberEmbeddings = KeyDefaultDict(self._new_number)
         self.numberStats = defaultdict(lambda: [])
 
     def forward(self, node):
