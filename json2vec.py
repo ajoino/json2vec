@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import ujson as json
 import numpy as np
 
@@ -22,7 +23,7 @@ class KeyDefaultDict(defaultdict):
 
 
 # module for childsumtreelstm
-class JSONNN(nn.Module):
+class JSONNN(nn.Module, ABC):
     def __init__(self, mem_dim=128):
         super(JSONNN, self).__init__()
         self.mem_dim = mem_dim
@@ -73,17 +74,21 @@ class JSONNN(nn.Module):
             # not impl error
             return None
 
+    @abstractmethod
     def embed_array(self, child_states, path):
-        raise NotImplementedError
+        """Embeds JSON arrays"""
 
+    @abstractmethod
     def embed_object(self, child_states, path):
-        raise NotImplementedError
+        """Embeds JSON objects"""
 
+    @abstractmethod
     def embed_string(self, node, path):
-        raise NotImplementedError
+        """Embeds JSON strings"""
 
+    @abstractmethod
     def embed_number(self, node, path):
-        raise NotImplementedError
+        """Embeds JSON numbers"""
 
     def _canonical(self, path):
         # Restrict to last two elements and replace ints with placeholder '___list___'
