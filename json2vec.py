@@ -1,10 +1,8 @@
 import ujson as json
-import math
 import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 import numbers
 import string
@@ -87,6 +85,13 @@ class JSONNN(nn.Module):
     def embed_number(self, node, path):
         raise NotImplementedError
 
+    def _canonical(self, path):
+        # Restrict to last two elements and replace ints with placeholder '___list___'
+        return tuple(
+                p if not isinstance(p, numbers.Number) else '___list___'
+                for p in path[-2:]
+        )
+
 
 class JSONTreeLSTM(JSONNN):
     def __init__(self, mem_dim=128,
@@ -126,16 +131,6 @@ class JSONTreeLSTM(JSONNN):
             return torch.cat(node, 1)
         except:
             print(node)
-
-    def _canonical(self, path):
-        # Restrict to last two elements
-        path = path[-2:]
-
-        # Replace ints with placeholder
-        for i in range(len(path)):
-            if isinstance(path[i], numbers.Number):
-                path[i] = "___list___"
-        return tuple(path)
 
     def _init_c(self):
         return torch.empty(1, self.mem_dim).fill_(0.).requires_grad_()
@@ -280,16 +275,6 @@ class SetJSONNN(JSONNN):
         if node is None: return self._init_c()
         return node
 
-    def _canonical(self, path):
-        # Restrict to last two elements
-        path = path[-2:]
-
-        # Replace ints with placeholder
-        for i in range(len(path)):
-            if isinstance(path[i], numbers.Number):
-                path[i] = "___list___"
-        return tuple(path)
-
     def _init_c(self):
         return torch.empty(1, self.mem_dim).fill_(0.).requires_grad_()
 
@@ -400,16 +385,6 @@ class FlatJSONNN(JSONNN):
 
     def forward(self, node):
         return self.embed_node(node, path=["___root___"])
-
-    def _canonical(self, path):
-        # Restrict to last two elements
-        path = path[-2:]
-
-        # Replace ints with placeholder
-        for i in range(len(path)):
-            if isinstance(path[i], numbers.Number):
-                path[i] = "___list___"
-        return tuple(path)
 
     def embed_object(self, child_states, path):
         return torch.sum(torch.cat(child_states), dim=0, keepdim=True)
