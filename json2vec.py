@@ -133,7 +133,7 @@ class JSONTreeLSTM(JSONNN):
             print(node)
 
     def _init_c(self):
-        return torch.empty(1, self.mem_dim).fill_(0.).requires_grad_()
+        return torch.zeros(1, self.mem_dim, requires_grad=True)
 
     def _newiouh(self, key):
         layer = nn.Linear(self.mem_dim, self.mem_dim * 3)
