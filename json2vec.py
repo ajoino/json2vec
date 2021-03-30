@@ -15,7 +15,7 @@ ALL_CHARACTERS = string.printable
 N_CHARACTERS = len(ALL_CHARACTERS)
 
 
-JSONType = Union[str, numbers.Number, Dict, List]
+JSONType = Union[str, numbers.Number, Dict[str, Any], List]
 TensorPair = Tuple[torch.Tensor, torch.Tensor]
 PathSeq = List[Union[str, numbers.Number]]
 
@@ -49,30 +49,16 @@ class JSONNN(nn.Module, ABC):
     def embed_node(self, node_as_json_value: JSONType, path: PathSeq=None) -> Optional[TensorPair]:
         path = path or []
         if isinstance(node_as_json_value, dict):  # DICT
-            child_states = []
-            for child_name, child in node_as_json_value.items():
-                child_path = path + [child_name]
-                child_state = self.embed_node(child, child_path)
-                if child_state is None:
-                    # print(name + "." + childname + " skipped...?")
-                    # print(child)
-                    continue  # Skip any
-                child_states.append(child_state)
+            child_states = [child_state for child_name, child in node_as_json_value.items()
+                            if (child_state := self.embed_node(child, path + [child_name])) is not None]
 
             if not child_states:
                 return None
             return self.embed_object(child_states, path)
 
         if isinstance(node_as_json_value, list):  # DICT
-            child_states = []
-            for i, child in enumerate(node_as_json_value):
-                child_path = path + [i]
-                child_state = self.embed_node(child, child_path)
-                if child_state is None:
-                    # print(name + "." + childname + " skipped...?")
-                    # print(child)
-                    continue  # Skip any
-                child_states.append(child_state)
+            child_states = [child_state for i, child in enumerate(node_as_json_value)
+                             if (child_state := self.embed_node(child, path + [i]))]
 
             if not child_states:
                 return None
