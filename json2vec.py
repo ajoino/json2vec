@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Any, Callable, Union, Optional, Tuple, Sequence, List, TypeVar, Mapping, Dict, cast, MutableSequence
 from abc import ABC, abstractmethod
 import ujson as json
 import numpy as np
@@ -13,8 +15,15 @@ ALL_CHARACTERS = string.printable
 N_CHARACTERS = len(ALL_CHARACTERS)
 
 
+JSONType = Union[str, numbers.Number, Dict, List]
+TensorPair = Tuple[torch.Tensor, torch.Tensor]
+PathSeq = List[Union[str, numbers.Number]]
+
+
 class KeyDefaultDict(defaultdict):
-    def __missing__(self, key):
+    default_factory: Optional[Callable[[str], Any]]
+
+    def __missing__(self, key: str) -> Any:
         if self.default_factory is None:
             raise KeyError(key)
         else:
@@ -24,18 +33,24 @@ class KeyDefaultDict(defaultdict):
 
 # module for childsumtreelstm
 class JSONNN(nn.Module, ABC):
-    def __init__(self, mem_dim=128):
+    def __init__(self, mem_dim: int = 128):
         super(JSONNN, self).__init__()
         self.mem_dim = mem_dim
 
-    def forward(self, node):
-        return self.embed_node(node)
+    def forward(self, node_as_json_str: str):
+        try:
+            node_as_json_value = json.loads(node_as_json_str)
+            return self.embed_node(node_as_json_value, path=["___root___"])
+        except:
+            raise Exception(node_as_json_str)
+        # return self.embedNode(node_as_json_str, path=["___root___"])[0]
 
-    def embed_node(self, node, path=None):
+
+    def embed_node(self, node_as_json_value: JSONType, path: PathSeq=None) -> Optional[TensorPair]:
         path = path or []
-        if isinstance(node, dict):  # DICT
+        if isinstance(node_as_json_value, dict):  # DICT
             child_states = []
-            for child_name, child in node.items():
+            for child_name, child in node_as_json_value.items():
                 child_path = path + [child_name]
                 child_state = self.embed_node(child, child_path)
                 if child_state is None:
@@ -48,9 +63,9 @@ class JSONNN(nn.Module, ABC):
                 return None
             return self.embed_object(child_states, path)
 
-        if isinstance(node, list):  # DICT
+        if isinstance(node_as_json_value, list):  # DICT
             child_states = []
-            for i, child in enumerate(node):
+            for i, child in enumerate(node_as_json_value):
                 child_path = path + [i]
                 child_state = self.embed_node(child, child_path)
                 if child_state is None:
@@ -64,33 +79,33 @@ class JSONNN(nn.Module, ABC):
             return self.embed_array(child_states, path)
 
 
-        elif isinstance(node, str):  # STRING
-            return self.embed_string(node, path)
+        elif isinstance(node_as_json_value, str):  # STRING
+            return self.embed_string(node_as_json_value, path)
 
-        elif isinstance(node, numbers.Number):  # NUMBER
-            return self.embed_number(node, path)
+        elif isinstance(node_as_json_value, numbers.Number):  # NUMBER
+            return self.embed_number(node_as_json_value, path)
 
         else:
             # not impl error
             return None
 
     @abstractmethod
-    def embed_array(self, child_states, path):
+    def embed_array(self, child_states: Sequence[TensorPair], path: PathSeq) -> Optional[TensorPair]:
         """Embeds JSON arrays"""
 
     @abstractmethod
-    def embed_object(self, child_states, path):
+    def embed_object(self, child_states: Sequence[TensorPair], path: PathSeq) -> Optional[TensorPair]:
         """Embeds JSON objects"""
 
     @abstractmethod
-    def embed_string(self, node, path):
+    def embed_string(self, node: str, path: PathSeq) -> Optional[TensorPair]:
         """Embeds JSON strings"""
 
     @abstractmethod
-    def embed_number(self, node, path):
+    def embed_number(self, node: numbers.Number, path: PathSeq) -> Optional[TensorPair]:
         """Embeds JSON numbers"""
 
-    def _canonical(self, path):
+    def _canonical(self, path: PathSeq) -> Tuple[str, ...]:
         # Restrict to last two elements and replace ints with placeholder '___list___'
         return tuple(
                 p if not isinstance(p, numbers.Number) else '___list___'
@@ -122,20 +137,13 @@ class JSONTreeLSTM(JSONNN):
         self.tie_containers = tie_weights_containers
         self.homogenous_types = homogenous_types
 
-    def forward(self, node):
-        if isinstance(node, str):
-            try:
-                node = json.loads(node)
-            except:
-                raise Exception(node)
-        # return self.embedNode(node, path=["___root___"])[0]
-
+    def forward(self, node_as_json_str: str) -> torch.Tensor:
         try:
-            node = self.embed_node(node, path=["___root___"])
-            if node is None: return torch.cat([self._init_c()] * 2, 1)
-            return torch.cat(node, 1)
+            result = super().forward(node_as_json_str)
+            if result is None: return torch.cat([self._init_c()] * 2, 1)
+            return torch.cat(result, 1)
         except:
-            print(node)
+            print(node_as_json_str)
 
     def _init_c(self):
         return torch.zeros(1, self.mem_dim, requires_grad=True)
@@ -155,7 +163,7 @@ class JSONTreeLSTM(JSONNN):
         self.add_module(str(key) + "_lout", layer)
         return layer
 
-    def embed_object(self, child_states, path):
+    def embed_object(self, child_states: Sequence[TensorPair], path: PathSeq) -> Optional[TensorPair]:
         canon_path = self._canonical(path) if not self.tie_containers else "___default___"
 
         hs = []
@@ -184,12 +192,12 @@ class JSONTreeLSTM(JSONNN):
 
         return c, h_hat
 
-    def _new_lstm(self, key):
+    def _new_lstm(self, key: str) -> nn.Module:
         lstm = nn.LSTMCell(input_size=self.mem_dim * 2, hidden_size=self.mem_dim)
-        self.add_module(str(key) + "_LSTM", lstm)
+        self.add_module(str(key) + "_ArrayLSTM", lstm)
         return lstm
 
-    def embed_array(self, child_states, path):
+    def embed_array(self, child_states: Sequence[TensorPair], path: PathSeq) -> Optional[TensorPair]:
         if self.homogenous_types:
             return self.embed_object(child_states, path)
 
@@ -202,12 +210,12 @@ class JSONTreeLSTM(JSONNN):
             c, h = lstm(child_ch, (c, h))
         return c, h
 
-    def _new_string_rnn(self, key):
+    def _new_string_rnn(self, key: str) -> nn.Module:
         lstm = nn.LSTM(self.mem_dim, self.mem_dim, 1)
         self.add_module(str(key) + "_StringLSTM", lstm)
         return lstm
 
-    def embed_string(self, string, path):
+    def embed_string(self, string: str, path: PathSeq) -> TensorPair:
         canon_path = self._canonical(path) if not self.tie_primitives else "___default___"
         if string == "":
             return self._init_c(), self._init_c()
@@ -221,17 +229,19 @@ class JSONTreeLSTM(JSONNN):
         return self._init_c(), hidden[0].mean(dim=1)
         # hidden[1].mean(dim=1), hidden[0].mean(dim=1)
 
-    def _new_number(self, key):
+    def _new_number(self, key: str) -> nn.Module:
         layer = nn.Linear(1, self.mem_dim)
-        self.add_module(str(key), layer)
+        self.add_module(str(key) + "_number", layer)
         return layer
 
-    def embed_number(self, num, path):
+    def embed_number(self, num: numbers.Number, path: PathSeq) -> TensorPair:
         if self.homogenous_types:
             return self.embed_string(str(num), path)
 
         canon_path = self._canonical(path) if not self.tie_primitives else "___default___"
 
+        # TODO: Implement actual moving average
+        """
         if len(self.number_stats[canon_path]) < 100:
             self.number_stats[canon_path].append(num)
 
@@ -241,6 +251,7 @@ class JSONTreeLSTM(JSONNN):
             std = np.std(self.number_stats[canon_path])
             if not np.allclose(std, 0.0):
                 num /= std
+        """
 
         encoded = self.number_embeddings[canon_path](torch.Tensor([[num]]))
         return self._init_c(), encoded
@@ -267,16 +278,16 @@ class SetJSONNN(JSONNN):
         self.tie_containers = tie_weights_containers
         self.homogenous_types = homogenous_types
 
-    def forward(self, node):
-        if isinstance(node, str):
+    def forward(self, node_as_json_str):
+        if isinstance(node_as_json_str, str):
             try:
-                node = json.loads(node)
+                node_as_json_str = json.loads(node_as_json_str)
             except:
-                raise Exception(node)
+                raise Exception(node_as_json_str)
 
-        node = self.embed_node(node, path=["___root___"])
-        if node is None: return self._init_c()
-        return node
+        node_as_json_str = self.embed_node(node_as_json_str, path=["___root___"])
+        if node_as_json_str is None: return self._init_c()
+        return node_as_json_str
 
     def _init_c(self):
         return torch.empty(1, self.mem_dim).fill_(0.).requires_grad_()
@@ -386,8 +397,8 @@ class FlatJSONNN(JSONNN):
         self.numberEmbeddings = KeyDefaultDict(self._new_number)
         self.numberStats = defaultdict(lambda: [])
 
-    def forward(self, node):
-        return self.embed_node(node, path=["___root___"])
+    def forward(self, node_as_json_str):
+        return self.embed_node(node_as_json_str, path=["___root___"])
 
     def embed_object(self, child_states, path):
         return torch.sum(torch.cat(child_states), dim=0, keepdim=True)
