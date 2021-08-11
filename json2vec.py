@@ -112,7 +112,7 @@ class JSONTreeLSTM(JSONNN):
 
         self.lstms = KeyDefaultDict(self._new_lstm)
 
-        self.string_encoder = nn.Embedding(N_CHARACTERS, self.mem_dim)
+        self.string_encoder = nn.Embedding(N_CHARACTERS, self.mem_dim).to(self.device)
         self.string_rnn = KeyDefaultDict(self._new_string_rnn)
         # nn.LSTM(self.mem_dim, self.mem_dim, 1)
 
