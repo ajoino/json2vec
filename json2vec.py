@@ -36,13 +36,15 @@ class JSONNN(nn.Module, ABC):
     def __init__(self, mem_dim: int = 128):
         super(JSONNN, self).__init__()
         self.mem_dim = mem_dim
+        self.device = None
+
+    def add_module(self, name: str, module):
+        module.to(self.device)
+        super().add_module(name, module)
 
     def forward(self, node_as_json_str: str):
-        try:
-            node_as_json_value = json.loads(node_as_json_str)
-            return self.embed_node(node_as_json_value, path=["___root___"])
-        except:
-            raise Exception(node_as_json_str)
+        node_as_json_value = json.loads(node_as_json_str)
+        return self.embed_node(node_as_json_value, path=["___root___"])
         # return self.embedNode(node_as_json_str, path=["___root___"])[0]
 
 
@@ -51,7 +53,6 @@ class JSONNN(nn.Module, ABC):
         if isinstance(node_as_json_value, dict):  # DICT
             child_states = [child_state for child_name, child in node_as_json_value.items()
                             if (child_state := self.embed_node(child, path + [child_name])) is not None]
-
             if not child_states:
                 return None
             return self.embed_object(child_states, path)
@@ -124,15 +125,12 @@ class JSONTreeLSTM(JSONNN):
         self.homogenous_types = homogenous_types
 
     def forward(self, node_as_json_str: str) -> torch.Tensor:
-        try:
-            result = super().forward(node_as_json_str)
-            if result is None: return torch.cat([self._init_c()] * 2, 1)
-            return torch.cat(result, 1)
-        except:
-            print(node_as_json_str)
+        result = super().forward(node_as_json_str)
+        if result is None: return torch.cat([self._init_c()] * 2, 1)
+        return torch.cat(result, 1)
 
     def _init_c(self):
-        return torch.zeros(1, self.mem_dim, requires_grad=True)
+        return torch.zeros(1, self.mem_dim, requires_grad=True, device=self.device)
 
     def _newiouh(self, key):
         layer = nn.Linear(self.mem_dim, self.mem_dim * 3)
@@ -157,8 +155,8 @@ class JSONTreeLSTM(JSONNN):
         for child_c, child_h in child_states:
             hs.append(child_h)
 
-            # f = self.fh[self._canonical(path)](child_h)
-            f = self.fh["___default___"](child_h)
+            f = self.fh[self._canonical(path)](child_h)
+            # f = self.fh["___default___"](child_h)
             fc = torch.mul(torch.sigmoid(f), child_c)
             fcs.append(fc)
 
@@ -166,8 +164,8 @@ class JSONTreeLSTM(JSONNN):
             return None
 
         hs_bar = torch.sum(torch.cat(hs), dim=0, keepdim=True)
-        # iou = self.iouh[self._canonical(path)](hs_bar)
-        iou = self.iouh["___default___"](hs_bar)
+        iou = self.iouh[self._canonical(path)](hs_bar)
+        # iou = self.iouh["___default___"](hs_bar)
         i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)
         i, o, u = torch.sigmoid(i), torch.sigmoid(o), torch.tanh(u)
 
@@ -206,10 +204,11 @@ class JSONTreeLSTM(JSONNN):
         if string == "":
             return self._init_c(), self._init_c()
 
-        tensor_input = torch.Tensor(
-                [ALL_CHARACTERS.index(char) for char in string if char in ALL_CHARACTERS]
+        tensor_input = torch.tensor(
+                [ALL_CHARACTERS.index(char) for char in string if char in ALL_CHARACTERS],
+                device=self.device,
         ).long()
-
+	
         encoded_input = self.string_encoder(tensor_input.view(1, -1)).view(-1, 1, self.mem_dim)
         output, hidden = self.string_rnn[canon_path](encoded_input)
         return self._init_c(), hidden[0].mean(dim=1)
@@ -239,7 +238,7 @@ class JSONTreeLSTM(JSONNN):
                 num /= std
         """
 
-        encoded = self.number_embeddings[canon_path](torch.Tensor([[num]]))
+        encoded = self.number_embeddings[canon_path](torch.tensor([[num]], dtype=torch.float32, device=self.device))
         return self._init_c(), encoded
 
 
