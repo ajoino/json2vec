@@ -33,17 +33,22 @@ class KeyDefaultDict(defaultdict):
 
 # module for childsumtreelstm
 class JSONNN(nn.Module, ABC):
-    def __init__(self, mem_dim: int = 128):
+    def __init__(self, mem_dim: int = 128, decode_json: bool = False):
         super(JSONNN, self).__init__()
         self.mem_dim = mem_dim
         self.device = None
+        self.decode_json = decode_json
 
     def add_module(self, name: str, module):
         module.to(self.device)
         super().add_module(name, module)
 
     def forward(self, node_as_json_str: str):
-        node_as_json_value = json.loads(node_as_json_str)
+        if not self.decode_json:
+            node_as_json_value = json.loads(node_as_json_str)
+        else:
+            node_as_json_value = node_as_json_str
+
         return self.embed_node(node_as_json_value, path=["___root___"])
         # return self.embedNode(node_as_json_str, path=["___root___"])[0]
 
@@ -101,11 +106,11 @@ class JSONNN(nn.Module, ABC):
 
 
 class JSONTreeLSTM(JSONNN):
-    def __init__(self, mem_dim=128,
+    def __init__(self, mem_dim=128, decode_json=False,
                  tie_weights_containers=False,
                  tie_weights_primitives=False,
                  homogenous_types=False):
-        super(JSONTreeLSTM, self).__init__(mem_dim)
+        super(JSONTreeLSTM, self).__init__(mem_dim, decode_json)
 
         self.iouh = KeyDefaultDict(self._newiouh)
         self.fh = KeyDefaultDict(self._newfh)
