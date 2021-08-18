@@ -55,6 +55,7 @@ class JSONNN(nn.Module, ABC):
 
     def embed_node(self, node_as_json_value: JSONType, path: PathSeq=None) -> Optional[TensorPair]:
         path = path or []
+
         if isinstance(node_as_json_value, dict):  # DICT
             child_states = [child_state for child_name, child in node_as_json_value.items()
                             if (child_state := self.embed_node(child, path + [child_name])) is not None]
@@ -100,8 +101,8 @@ class JSONNN(nn.Module, ABC):
     def _canonical(self, path: PathSeq) -> Tuple[str, ...]:
         # Restrict to last two elements and replace ints with placeholder '___list___'
         return tuple(
-                p if not isinstance(p, numbers.Number) else '___list___'
-                for p in path[-2:]
+                p #if not isinstance(p, numbers.Number) else '___list___'
+                for p in path[-3:]
         )
 
 
@@ -157,29 +158,29 @@ class JSONTreeLSTM(JSONNN):
 
         hs = []
         fcs = []
-        for child_c, child_h in child_states:
+        for child_h, child_c in child_states:
             hs.append(child_h)
 
-            f = self.fh[self._canonical(path)](child_h)
+            f = self.fh[self._canonical(path)](child_h) # Eq 4.
             # f = self.fh["___default___"](child_h)
-            fc = torch.mul(torch.sigmoid(f), child_c)
+            fc = torch.mul(torch.sigmoid(f), child_c) # Eq 4.
             fcs.append(fc)
 
         if not hs:
             return None
 
-        hs_bar = torch.sum(torch.cat(hs), dim=0, keepdim=True)
-        iou = self.iouh[self._canonical(path)](hs_bar)
+        hs_bar = torch.sum(torch.cat(hs), dim=0, keepdim=True) # Eq. (2)
+        iou = self.iouh[self._canonical(path)](hs_bar) # Eqs. (3), (5), (6)
         # iou = self.iouh["___default___"](hs_bar)
-        i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)
-        i, o, u = torch.sigmoid(i), torch.sigmoid(o), torch.tanh(u)
+        i, o, u = torch.split(iou, iou.size(1) // 3, dim=1) # Eqs. (3), (5), (6)
+        i, o, u = torch.sigmoid(i), torch.sigmoid(o), torch.tanh(u) # Eqs. (3), (5), (6)
 
-        c = torch.mul(i, u) + torch.sum(torch.cat(fcs), dim=0, keepdim=True)
-        h = torch.mul(o, torch.tanh(c))
+        c = torch.mul(i, u) + torch.sum(torch.cat(fcs), dim=0, keepdim=True) # Eq. 7
+        h = torch.mul(o, torch.tanh(c)) # Eq. (8)
 
         h_hat = self.lout[canon_path](h)
 
-        return c, h_hat
+        return h_hat, c
 
     def _new_lstm(self, key: str) -> nn.Module:
         lstm = nn.LSTMCell(input_size=self.mem_dim * 2, hidden_size=self.mem_dim)
@@ -192,12 +193,12 @@ class JSONTreeLSTM(JSONNN):
 
         canon_path = self._canonical(path) if not self.tie_containers else "___default___"
         lstm = self.lstms[canon_path]
-        c = self._init_c()
         h = self._init_c()
-        for child_c, child_h in child_states:
-            child_ch = torch.cat([child_c, child_h], dim=1)
-            c, h = lstm(child_ch, (c, h))
-        return c, h
+        c = self._init_c()
+        for child_h, child_c in child_states:
+            child_ch = torch.cat([child_h, child_c], dim=1)
+            h, c = lstm(child_ch, (h, c))
+        return h, c
 
     def _new_string_rnn(self, key: str) -> nn.Module:
         lstm = nn.LSTM(self.mem_dim, self.mem_dim, 1)
@@ -216,7 +217,7 @@ class JSONTreeLSTM(JSONNN):
 	
         encoded_input = self.string_encoder(tensor_input.view(1, -1)).view(-1, 1, self.mem_dim)
         output, hidden = self.string_rnn[canon_path](encoded_input)
-        return self._init_c(), hidden[0].mean(dim=1)
+        return hidden[0].mean(dim=1), self._init_c()
         # hidden[1].mean(dim=1), hidden[0].mean(dim=1)
 
     def _new_number(self, key: str) -> nn.Module:
@@ -244,7 +245,7 @@ class JSONTreeLSTM(JSONNN):
         """
 
         encoded = self.number_embeddings[canon_path](torch.tensor([[num]], dtype=torch.float32, device=self.device))
-        return self._init_c(), encoded
+        return encoded, self._init_c() #self._init_c(), encoded
 
 
 class SetJSONNN(JSONNN):
