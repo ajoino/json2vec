@@ -129,7 +129,6 @@ class JSONNN(nn.Module, ABC):
         return "_".join(str(p) for p in path) + '_' + label
 
 
-
 class JSONTreeLSTM(JSONNN):
     def __init__(self,
                  mem_dim: int = 128,
@@ -262,34 +261,33 @@ class JSONTreeLSTM(JSONNN):
 
     def _new_number_running_mean(self, key) -> torch.Tensor:
         running_mean = torch.zeros(1, 1, requires_grad=False)
-        self.register_buffer(self._registration_name(key, '_number_mean'), running_mean)
-        return running_mean
+        self.register_buffer(buffer_name := self._registration_name(key, '_number_mean'), running_mean)
+        return self.get_buffer(buffer_name)
 
     def _new_number_running_sqmean(self, key: PathSeq) -> torch.Tensor:
         running_sqmean = torch.ones(1, 1, requires_grad=False)
-        self.register_buffer(self._registration_name(key, '_number_sqmean'), running_sqmean)
-        return running_sqmean
+        self.register_buffer(buffer_name := self._registration_name(key, '_number_sqmean'), running_sqmean)
+        return self.get_buffer(buffer_name)
 
-    def _normalize_number(self, number: numbers.Number, path: PathSeq) -> numbers.Number:
+    def _normalize_number(self, number: numbers.Number, path: PathSeq) -> torch.Tensor:
         mean = self.number_running_mean[path]
         sqmean = self.number_running_sqmean[path]
         # If in training mode, update the mean and square mean
+        # TODO: Update this only once per batch
         if self.training:
-            mean = self.number_running_mean[path] = (
-                    self.number_mean_fraction * mean + self.number_new_fraction * number
-            )
-            sqmean = self.number_running_sqmean[path] = (
-                    self.number_mean_fraction * sqmean + self.number_new_fraction * number ** 2
-            )
-            setattr(self, self._registration_name(path, '_number_mean'), mean)
-            setattr(self, self._registration_name(path, '_number_sqmean'), sqmean)
-        std = sqrt(sqmean - mean ** 2)
+            mean.mul_(self.number_mean_fraction)
+            mean.add_(self.number_new_fraction * number)
+            sqmean.mul_(self.number_mean_fraction)
+            sqmean.add_(self.number_new_fraction * number ** 2)
+        std = torch.sqrt(sqmean - mean ** 2)
 
         return (number - mean) / std
 
     def embed_number(self, num: numbers.Number, path: PathSeq) -> TensorPair:
         normalized_number = self._normalize_number(num, path)
-        encoded = self.number_embeddings[path](torch.tensor(normalized_number, dtype=torch.float32, device=self.device))
+        encoded = self.number_embeddings[path](
+                normalized_number.clone().to(dtype=torch.float32, device=self.device)
+        )
         return encoded, self._init_c()
 
 
