@@ -30,6 +30,12 @@ def empty_embedding(mem_dim, device):
     return torch.zeros(1, mem_dim, requires_grad=True, device=device)
 
 
+class DeviceModuleDict(nn.ModuleDict):
+    def add_module(self, name: str, module):
+        module.to(self.device)
+        super().add_module(name, module)
+
+
 class KeyDefaultDict(defaultdict):
     default_factory: Optional[Callable[[str], Any]]
 
@@ -147,8 +153,8 @@ class ObjectEmbedder(nn.Module):
 
         self.mem_dim = mem_dim
         self.iouh = nn.Linear(mem_dim, 3 * mem_dim)
-        self.fh = nn.ModuleDict()
-        self.lout = nn.ModuleDict()
+        self.fh = DeviceModuleDict()
+        self.lout = DeviceModuleDict()
         self.paths = set()
 
     def add_path(self, path_str: str):
@@ -192,7 +198,7 @@ class ArrayEmbedder(nn.Module):
 
         self.mem_dim = mem_dim
         self.lstm_cell = nn.LSTMCell(input_size=self.mem_dim * 2, hidden_size=self.mem_dim)
-        self.lout = nn.ModuleDict()
+        self.lout = DeviceModuleDict()
         self.paths = set()
 
     def add_path(self, path_str: str):
@@ -219,7 +225,7 @@ class StringEmbedder(nn.Module):
 
         self.mem_dim = mem_dim
         self.string_encoder = nn.Embedding(N_CHARACTERS, self.mem_dim)
-        self.rnn = nn.ModuleDict()
+        self.rnn = DeviceModuleDict()
         self.paths = set()
 
     def add_path(self, path_str: str):
@@ -247,8 +253,8 @@ class NumberEmbedder(nn.Module):
 
         self.mem_dim = mem_dim
         self.alpha = alpha
-        self.embeddings = nn.ModuleDict()
-        self.statistics = nn.ModuleDict()
+        self.embeddings = DeviceModuleDict()
+        self.statistics = DeviceModuleDict()
         self.paths = set()
 
     def add_path(self, path_str: str):
